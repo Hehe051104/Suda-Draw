@@ -30,6 +30,7 @@ public:
 private:
 	void InitButtonLabels();
 	void SetButtonTextFromResource(UINT buttonId, UINT stringId);
+	void AddStringFromResource(CComboBox& comboBox, UINT stringId);
 
 // 实现
 protected:

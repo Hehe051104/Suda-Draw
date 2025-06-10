@@ -204,10 +204,10 @@ BOOL CDRAWDlg::OnInitDialog()
 	// 填充形状选项
 	if (m_cboShape.GetSafeHwnd()) // 确保控件句柄有效
 	{
-		m_cboShape.AddString(_T("自由绘制"));
-		m_cboShape.AddString(_T("矩形"));
-		m_cboShape.AddString(_T("正方形"));
-		m_cboShape.AddString(_T("圆形"));
+		AddStringFromResource(m_cboShape, IDS_SHAPE_FREEDRAW);
+		AddStringFromResource(m_cboShape, IDS_SHAPE_RECTANGLE);
+		AddStringFromResource(m_cboShape, IDS_SHAPE_SQUARE);
+		AddStringFromResource(m_cboShape, IDS_SHAPE_CIRCLE);
 		m_cboShape.SetCurSel(0); // 设置默认选项
 	}
 	// 初始化鼠标位置
@@ -886,4 +886,20 @@ void CDRAWDlg::InitButtonLabels()
 	SetButtonTextFromResource(IDC_MDOWN, IDS_STRING_MDOWN);
 	SetButtonTextFromResource(IDC_ML, IDS_STRING_ML);
 	SetButtonTextFromResource(IDC_MR, IDS_STRING_MR);
+
+	CString strLabel;
+	strLabel.LoadString(IDS_STRING_PEN_WIDTH);
+	SetDlgItemText(IDC_STATIC_PEN_WIDTH_LABEL, strLabel);
+
+	strLabel.LoadString(IDS_STRING_SHAPE);
+	SetDlgItemText(IDC_STATIC_SHAPE_LABEL, strLabel);
+}
+
+void CDRAWDlg::AddStringFromResource(CComboBox& comboBox, UINT stringId)
+{
+	CString str;
+	if (str.LoadString(stringId))
+	{
+		comboBox.AddString(str);
+	}
 }

@@ -37,6 +37,8 @@
 #define IDC_REDO                        1026
 #define IDC_COMBO3                      1028
 #define IDC_SHAPE                       1030
+#define IDC_STATIC_PEN_WIDTH_LABEL      1056
+#define IDC_STATIC_SHAPE_LABEL          1057
 #define IDS_STRING_NEW                  1031
 #define IDS_STRING_OPEN                 1032
 #define IDS_STRING_SAVE                 1033
@@ -62,6 +64,12 @@
 #define IDS_STRING_MDOWN                1053
 #define IDS_STRING_ML                   1054
 #define IDS_STRING_MR                   1055
+#define IDS_STRING_PEN_WIDTH            1058
+#define IDS_STRING_SHAPE                1059
+#define IDS_SHAPE_FREEDRAW              1060
+#define IDS_SHAPE_RECTANGLE             1061
+#define IDS_SHAPE_SQUARE                1062
+#define IDS_SHAPE_CIRCLE                1063
 
 // Next default values for new objects
 // 
@@ -69,7 +77,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        141
 #define _APS_NEXT_COMMAND_VALUE         32771
-#define _APS_NEXT_CONTROL_VALUE         1031
+#define _APS_NEXT_CONTROL_VALUE         1060
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif
