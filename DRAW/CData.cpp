@@ -2,7 +2,9 @@
 #include "CData.h"
 #include <algorithm>
 
-CData::CData() : m_pCurLine(nullptr) {}
+CData::CData() : m_pCurLine(nullptr)
+{
+}
 
 CData::~CData() {
     Clear();
@@ -24,9 +26,12 @@ void CData::AddLine(const CLine& line) {
     m_lines.push_back(line);
 }
 
-void CData::StartNewLine(const SPoint& p0) {
-    m_lines.emplace_back(m_lines.size(), const_cast<SPoint&>(p0));
-    m_pCurLine = &m_lines.back();
+void CData::StartNewLine(const SPoint& p)
+{
+	m_redoStack.clear();
+	m_lines.emplace_back();
+	m_pCurLine = &m_lines.back();
+	m_pCurLine->AddPoint(p);
 }
 
 void CData::AddPointToLine(const SPoint& p0, int lineIndex) {
@@ -154,4 +159,34 @@ bool CData::WritePlt(const char* szFname) const {
     fprintf(fp, "SP0;");
     fclose(fp);
     return true;
+}
+
+void CData::Undo()
+{
+	if (CanUndo())
+	{
+		m_redoStack.push_back(std::move(m_lines.back()));
+		m_lines.pop_back();
+		m_pCurLine = nullptr;
+	}
+}
+
+void CData::Redo()
+{
+	if (CanRedo())
+	{
+		m_lines.push_back(std::move(m_redoStack.back()));
+		m_redoStack.pop_back();
+		m_pCurLine = nullptr;
+	}
+}
+
+bool CData::CanUndo() const
+{
+	return !m_lines.empty();
+}
+
+bool CData::CanRedo() const
+{
+	return !m_redoStack.empty();
 }

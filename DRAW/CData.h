@@ -4,6 +4,7 @@
 
 class CData {
     std::vector<CLine> m_lines;
+    std::vector<CLine> m_redoStack;
     CLine* m_pCurLine;
 
 public:
@@ -25,6 +26,11 @@ public:
 
     SPoint* FindPoint(SPoint p0, int d);
     CLine* FindLine(SPoint p0, int d);
+
+    void Undo();
+    void Redo();
+    bool CanUndo() const;
+    bool CanRedo() const;
 
     void Show(CDC* pDC, SPoint p0, SShowState state) const;
     void ShowCur(CDC* pDC, SPoint p0, SShowState state) const;

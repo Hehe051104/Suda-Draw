@@ -4,8 +4,8 @@
 
 struct SShowState {
     double m_r;
-    int m_dx;
-    int m_dy;
+    double m_dx;
+    double m_dy;
     bool m_bViewPoint;
 };
 
