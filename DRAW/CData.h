@@ -2,6 +2,12 @@
 #include "CLine.h"
 #define MAX_LINE 1024  //一个图形最多有1024个曲线
 
+struct CPointData
+{
+	CPoint m_pt;
+	bool m_bSelected;
+};
+
 class CData {
     CLine* m_pLine[MAX_LINE];
     int m_nLine;
@@ -10,6 +16,7 @@ public:
     CData();
     ~CData();
     int GetNum() { return m_nLine; }
+    CLine* GetLine(int nIndex);
     int AddLine(SPoint p0);  //添加一条新线返回该线序号
     int AddPoint(SPoint p0, int sn = 0);  //为指定线添加一个点，sn=0表示默认当前线
     bool SetCurrent(SPoint p0, int d = 3);  //选择当前线、点
@@ -17,6 +24,9 @@ public:
     void EndLine() { m_pCurLine = nullptr; }
     bool DelLine();
     bool DelPoint();
+
+    SPoint* FindPoint(SPoint p0, int d);
+    CLine* FindLine(SPoint p0, int d);
 
     void ShowLine(CDC* pDC, SPoint p0, SShowState state);
     void ShowCurLine(CDC* pDC, SPoint p0, SShowState state);

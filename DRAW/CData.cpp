@@ -3,6 +3,7 @@
 
 CData::CData() {
     m_nLine = 0;
+    m_pCurLine = NULL;
 }
 
 CData::~CData() {
@@ -145,5 +146,42 @@ void CData::Clear() {  //清空数据
         delete m_pLine[i];
     }
     m_nLine = 0;
-    m_pCurLine = nullptr;
+    m_pCurLine = NULL;
+}
+
+CLine* CData::GetLine(int nIndex)
+{
+    if (nIndex >= 0 && nIndex < m_nLine)
+    {
+        return m_pLine[nIndex];
+    }
+    return NULL;
+}
+
+SPoint* CData::FindPoint(SPoint p0, int d)
+{
+    for (int i = 0; i < m_nLine; i++)
+    {
+        for (int j = 0; j < m_pLine[i]->GetNum(); j++)
+        {
+            SPoint pt = m_pLine[i]->GetPoint(j);
+            if (fabs(pt.m_x - p0.m_x) < d && fabs(pt.m_y - p0.m_y) < d)
+            {
+                return &m_pLine[i]->GetPointForUpdate(j);
+            }
+        }
+    }
+    return nullptr;
+}
+
+CLine* CData::FindLine(SPoint p0, int d)
+{
+    for (int i = 0; i < m_nLine; i++)
+    {
+        if (m_pLine[i]->IsOnLine(p0, d))
+        {
+            return m_pLine[i];
+        }
+    }
+    return nullptr;
 }

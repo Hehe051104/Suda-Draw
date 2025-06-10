@@ -22,15 +22,15 @@ class CAboutDlg : public CDialogEx
 public:
 	CAboutDlg();
 
-// 对话框数据
+	// 对话框数据
 #ifdef AFX_DESIGN_TIME
 	enum { IDD = IDD_ABOUTBOX };
 #endif
 
-	protected:
+protected:
 	virtual void DoDataExchange(CDataExchange* pDX);    // DDX/DDV 支持
 
-// 实现
+	// 实现
 protected:
 	DECLARE_MESSAGE_MAP()
 };
@@ -66,8 +66,8 @@ CDRAWDlg::CDRAWDlg(CWnd* pParent /*=nullptr*/)
 	m_StateShow.m_dy = 0;           //垂直移动
 	m_StateShow.m_bViewPoint = true;//显示结点
 	m_ColorLine = RGB(0, 0, 0);   //黑色
-	m_ColorPoint = RGB(0, 0, 0);    
-	m_ColorLineCur = RGB(0, 0, 0); 
+	m_ColorPoint = RGB(0, 0, 0);
+	m_ColorLineCur = RGB(0, 0, 0);
 	m_ColorPointCur = RGB(0, 0, 0);
 	m_bDraw = true;
 	m_hIcon = AfxGetApp()->LoadIcon(IDR_MAINFRAME);
@@ -79,28 +79,37 @@ CDRAWDlg::CDRAWDlg(CWnd* pParent /*=nullptr*/)
 	m_ColorDlg.m_cc.Flags |= CC_RGBINIT | CC_FULLOPEN;
 	m_ColorDlg.m_cc.rgbResult = m_ColorBg;
 
-}	
+	// 初始化成员变量
+	m_LButtonDown = FALSE;
+	m_pLineCur = NULL;
+	m_nPenWidth = 1;
+	m_bDrawingShape = false;
+	m_eShapeType = ShapeType::FREE_DRAW;
+	m_eMoveMode = MoveMode::None;
+	m_pMovingPoint = nullptr;
+	m_pMovingLine = nullptr;
+	m_pt = CPoint(0, 0);
+}
 
 void CDRAWDlg::DoDataExchange(CDataExchange* pDX)
 {
 	CDialogEx::DoDataExchange(pDX);
 	DDX_Control(pDX, IDC_PEN_WIDTH_COMBO, m_cboPenWidth);
 	DDX_Control(pDX, IDC_SHAPE, m_cboShape);
-
 }
 
 BEGIN_MESSAGE_MAP(CDRAWDlg, CDialogEx)
 	ON_WM_SYSCOMMAND()
 	ON_WM_PAINT()
 	ON_WM_QUERYDRAGICON()
-	
+
 	ON_WM_TIMER()
 	ON_WM_RBUTTONDOWN()
 	ON_WM_MOUSEMOVE()
 
 	ON_WM_LBUTTONUP()
 	ON_WM_LBUTTONDOWN() // 绑定鼠标按下事件
-	
+
 
 	// 按钮控件
 	ON_BN_CLICKED(IDC_NEW, &CDRAWDlg::OnBnClickedNew)
@@ -120,6 +129,8 @@ BEGIN_MESSAGE_MAP(CDRAWDlg, CDialogEx)
 	ON_BN_CLICKED(DC_DEL_LINE, &CDRAWDlg::OnBnClickedDelLine)
 	ON_BN_CLICKED(IDC_DRAW, &CDRAWDlg::OnBnClickedDraw)
 	ON_BN_CLICKED(IDC_SEL, &CDRAWDlg::OnBnClickedSel)
+	ON_BN_CLICKED(IDC_MOVE_LINE, &CDRAWDlg::OnBnClickedMoveLine)
+	ON_BN_CLICKED(IDC_MOVE_POINT, &CDRAWDlg::OnBnClickedMovePoint)
 
 	// 颜色设置
 	ON_BN_CLICKED(IDC_PEN, &CDRAWDlg::OnBnClickedBtnLineColor)
@@ -189,7 +200,7 @@ BOOL CDRAWDlg::OnInitDialog()
 	m_cboPenWidth.SetCurSel(0); // 默认选择1像素
 	m_nPenWidth = 1;
 
-	
+
 	// 填充形状选项
 	if (m_cboShape.GetSafeHwnd()) // 确保控件句柄有效
 	{
@@ -253,20 +264,25 @@ void CDRAWDlg::OnPaint()
 
 void CDRAWDlg::Draw(CDC* pDC) {
 	// 背景设置
-	CBrush* pOldBrush, BrushBk(m_ColorBg);
-	pOldBrush = pDC->SelectObject(&BrushBk);
+	CBrush BrushBk(m_ColorBg);
+	CBrush* pOldBrush = pDC->SelectObject(&BrushBk);
 	pDC->Rectangle(m_x1, m_y1, m_x2, m_y2);
 	pDC->SelectObject(pOldBrush);
+	BrushBk.DeleteObject();
 
 	// 画笔设置
 	CPen NewPen(PS_SOLID, m_nPenWidth, m_ColorLine);
 	CPen* pOldPen = pDC->SelectObject(&NewPen);
+
+	// 绘制所有已保存的线条
 	m_Data.ShowLine(pDC, SPoint(0, m_x1, m_y2), m_StateShow);
 
+	// 绘制当前正在画的线
 	CPen NewPenCur(PS_SOLID, m_nPenWidth, m_ColorLineCur);
 	pDC->SelectObject(&NewPenCur);
 	m_Data.ShowCurLine(pDC, SPoint(0, m_x1, m_y2), m_StateShow);
 
+	// 绘制节点
 	if (m_StateShow.m_bViewPoint) {
 		CPen NewPenPoint(PS_SOLID, 1, m_ColorPoint);
 		pDC->SelectObject(&NewPenPoint);
@@ -278,18 +294,20 @@ void CDRAWDlg::Draw(CDC* pDC) {
 	}
 
 	pDC->SelectObject(pOldPen);
+	NewPen.DeleteObject();
+	NewPenCur.DeleteObject();
+
 
 	// 绘制形状预览
-	if (m_bDrawingShape)
+	if (m_bDrawingShape && m_LButtonDown)
 	{
 		// 保存当前绘图状态
-		int nOldROP2 = pDC->SetROP2(R2_XORPEN);
+		int nOldROP2 = pDC->SetROP2(R2_NOTXORPEN);
 		CPen previewPen(PS_DOT, 1, RGB(0, 0, 0));
-		CBrush nullBrush;
-		nullBrush.CreateStockObject(NULL_BRUSH);
+		CBrush* pNullBrush = (CBrush*)CBrush::FromHandle((HBRUSH)GetStockObject(NULL_BRUSH));
 
 		CPen* pOldPreviewPen = pDC->SelectObject(&previewPen);
-		CBrush* pOldPreviewBrush = pDC->SelectObject(&nullBrush);
+		CBrush* pOldPreviewBrush = pDC->SelectObject(pNullBrush);
 
 		// 转换坐标
 		CPoint ptStart = m_ptShapeStart;
@@ -332,6 +350,22 @@ void CDRAWDlg::Draw(CDC* pDC) {
 		pDC->SelectObject(pOldPreviewPen);
 		pDC->SetROP2(nOldROP2);
 	}
+
+	// 高亮绘制选中的节点
+	CPen selectionPen(PS_SOLID, 2, RGB(255, 0, 0)); // 红色，更粗的画笔
+	CBrush selectionBrush(RGB(255, 0, 0)); // 红色画刷
+	pOldPen = pDC->SelectObject(&selectionPen);
+	pOldBrush = pDC->SelectObject(&selectionBrush);
+	for (int i = 0; i < m_SelectedPoints.GetSize(); i++)
+	{
+		CPoint* pPoint = m_SelectedPoints.GetAt(i);
+		if (pPoint)
+		{
+			pDC->Ellipse(pPoint->x - 4, pPoint->y - 4, pPoint->x + 4, pPoint->y + 4);
+		}
+	}
+	pDC->SelectObject(pOldPen);
+	pDC->SelectObject(pOldBrush);
 }
 
 
@@ -342,25 +376,6 @@ HCURSOR CDRAWDlg::OnQueryDragIcon()
 	return static_cast<HCURSOR>(m_hIcon);
 }
 
-/*
-void CDRAWDlg::OnLButtonUp(UINT nFlags, CPoint point) {
-	if (point.x <= m_x1 || point.x >= m_x2 || point.y <= m_y1 || point.y >= m_y2)
-		return;
-	point.x -= m_StateShow.m_dx;
-	point.y += m_StateShow.m_dy;
-	SPoint tPoint = { 0, (double)point.x, (double)point.y };
-	SPoint::XY2xy(tPoint, SPoint(0, m_x1, m_y2), m_StateShow);
-	if (m_bDraw)
-		m_Data.AddPoint(tPoint);
-	else
-		m_Data.SetCurrent(tPoint);
-	CClientDC dc(this);
-	Draw(&dc);
-	ShowStatus(&dc);
-	CDialogEx::OnLButtonUp(nFlags, point);
-
-}
-*/
 void CDRAWDlg::OnRButtonDown(UINT nFlags, CPoint point) {
 	m_Data.EndLine();
 	CDialogEx::OnRButtonDown(nFlags, point);
@@ -394,20 +409,52 @@ void CDRAWDlg::OnBnClickedSaveAs() {
 	}
 }
 
-void CDRAWDlg::OnMouseMove(UINT nFlags, CPoint point) { 
-	// 输出光标坐标
-	CString csString;
-	SPoint tPoint(0, point.x, point.y);
-	SPoint::XY2xy(tPoint, SPoint(0, 105, m_h - 70), m_StateShow);
-	csString.Format("x=% 04d,y=% 04d", (int)tPoint.m_x - m_StateShow.m_dx, (int)tPoint.m_y - m_StateShow.m_dy);
-	CClientDC dc(this);
-	dc.TextOut(m_w - 350, m_h - 130, csString);
-
+void CDRAWDlg::OnMouseMove(UINT nFlags, CPoint point) {
 	// 更新当前鼠标位置
 	m_CurrentMousePos = point;
 
-	// 如果正在绘制形状，触发重绘
-	if (m_bDrawingShape) {
+	if (m_LButtonDown && m_bDraw && m_eShapeType == ShapeType::FREE_DRAW)
+	{
+		if (point.x > m_x1 && point.x < m_x2 && point.y > m_y1 && point.y < m_y2)
+		{
+			point.x -= m_StateShow.m_dx;
+			point.y += m_StateShow.m_dy;
+			SPoint tPoint = { 0, (double)point.x, (double)point.y };
+			SPoint::XY2xy(tPoint, SPoint(0, m_x1, m_y2), m_StateShow);
+			m_Data.AddPoint(tPoint);
+			Invalidate();
+		}
+	}
+	else if (m_LButtonDown && !m_bDraw && m_eMoveMode != MoveMode::None)
+	{
+		if (m_pMovingPoint)
+		{
+			SPoint tPoint = { 0, (double)point.x, (double)point.y };
+			SPoint::XY2xy(tPoint, SPoint(0, m_x1, m_y2), m_StateShow);
+			m_pMovingPoint->m_x = tPoint.m_x;
+			m_pMovingPoint->m_y = tPoint.m_y;
+			Invalidate();
+		}
+		else if (m_pMovingLine)
+		{
+			int dx = point.x - m_ptDragStart.x;
+			int dy = point.y - m_ptDragStart.y;
+			m_ptDragStart = point; // 更新拖动起点
+
+			SPoint delta = { 0, (double)dx, (double)dy };
+			// 注意：这里只做简单偏移，没有考虑缩放，后续可优化
+			
+			for (int i = 0; i < m_pMovingLine->GetNum(); i++)
+			{
+				SPoint& pt = m_pMovingLine->GetPointForUpdate(i);
+				pt.m_x += delta.m_x / m_StateShow.m_r;
+				pt.m_y -= delta.m_y / m_StateShow.m_r;
+			}
+			Invalidate();
+		}
+	}
+	else if (m_LButtonDown && m_bDraw && m_bDrawingShape)
+	{
 		Invalidate();
 	}
 
@@ -424,19 +471,12 @@ void CDRAWDlg::OnBnClickedNew() {
 }
 
 void CDRAWDlg::ShowStatus(CDC* pDC) {
-		CString csString;
-		csString.Format("图形总数: % 04d; 放大倍率: % 0.2f; 横向偏移: % 04d; 纵向偏移: % 04d; 文件路径: % s",
-			m_Data.GetNum(), m_StateShow.m_r, m_StateShow.m_dx, m_StateShow.m_dy, m_csFilePath);
-		
-		/*
-		pDC->SetTextColor(RGB(0, 0, 0)); // 黑色文字
-		pDC->SetBkMode(TRANSPARENT);     // 透明背景
-		*/
+	CString s;
+	s.Format(CString("坐标: (%4d, %4d)"), m_CurrentMousePos.x, m_CurrentMousePos.y);
+	pDC->TextOut(20, m_h - 40, s);
 
-		CFont* pOldFont = pDC->SelectObject(&m_Font);
-		pDC->TextOut(200, m_h - 130, csString);
-		pDC->SelectObject(pOldFont);
-
+	s.Format(CString("倍率: %5.2f"), m_StateShow.m_r);
+	pDC->TextOut(200, m_h - 40, s);
 }
 
 void CDRAWDlg::OnBnClickedZoomin() {
@@ -494,10 +534,19 @@ void CDRAWDlg::OnBnClickedDraw() {
 	m_bDraw = true;
 }
 
-void CDRAWDlg::OnBnClickedSel() {
-	GetDlgItem(IDC_SEL)->EnableWindow(false);
-	GetDlgItem(IDC_DRAW)->EnableWindow(true);
+void CDRAWDlg::OnBnClickedSel()
+{
 	m_bDraw = false;
+	GetDlgItem(IDC_DRAW)->EnableWindow(true);
+	GetDlgItem(IDC_SEL)->EnableWindow(false);
+
+	// 清理内存
+	for (int i = 0; i < m_SelectedPoints.GetSize(); i++)
+	{
+		delete m_SelectedPoints.GetAt(i);
+	}
+	m_SelectedPoints.RemoveAll();
+	Invalidate();
 }
 
 void CDRAWDlg::OnBnClickedDelPoint() {
@@ -508,6 +557,19 @@ void CDRAWDlg::OnBnClickedDelPoint() {
 void CDRAWDlg::OnBnClickedDelLine() {
 	m_Data.DelLine();
 	Invalidate();
+}
+
+void CDRAWDlg::OnBnClickedMoveLine()
+{
+	m_bDraw = false;
+	m_eMoveMode = MoveMode::MoveLine;
+	// 可以添加一些UI反馈，比如让其他按钮失效
+}
+
+void CDRAWDlg::OnBnClickedMovePoint()
+{
+	m_bDraw = false;
+	m_eMoveMode = MoveMode::MovePoint;
 }
 
 //----------------新增颜色选择-------------
@@ -573,120 +635,174 @@ void CDRAWDlg::UpdateButtonColor(UINT nButtonID, COLORREF color)
 // 鼠标按下事件
 void CDRAWDlg::OnLButtonDown(UINT nFlags, CPoint point)
 {
-    if (point.x < m_x1 || point.x > m_x2 || point.y < m_y1 || point.y > m_y2)
-        return;
+	if (point.x < m_x1 || point.x > m_x2 || point.y < m_y1 || point.y > m_y2)
+		return;
 
-    // 根據組合框選擇的形狀類型處理
-    if (m_eShapeType == ShapeType::FREE_DRAW) {
-        // 自由繪製模式
-        point.x -= m_StateShow.m_dx;
-        point.y += m_StateShow.m_dy;
-        SPoint tPoint = { 0, (double)point.x, (double)point.y };
-        SPoint::XY2xy(tPoint, SPoint(0, m_x1, m_y2), m_StateShow);
+	if (m_bDraw) // 绘制模式
+	{
+		m_LButtonDown = TRUE;
+		point.x -= m_StateShow.m_dx;
+		point.y += m_StateShow.m_dy;
+		SPoint tPoint = { 0, (double)point.x, (double)point.y };
+		SPoint::XY2xy(tPoint, SPoint(0, m_x1, m_y2), m_StateShow);
 
-        if (m_bDraw)
-            m_Data.AddPoint(tPoint);
-        else
-            m_Data.SetCurrent(tPoint);
-    }
-    else {
-        // 規則形狀模式
-        m_Data.EndLine(); // 只在開始新形狀時結束前一個線段
-        m_bDrawingShape = true;
-        m_ptShapeStart = point;
-    }
+		if (m_eShapeType == ShapeType::FREE_DRAW) {
+			m_Data.AddPoint(tPoint);
+		}
+		else {
+			m_Data.EndLine();
+			m_bDrawingShape = true;
+			m_ptShapeStart = point;
+		}
+	}
+	else // 选择或移动模式
+	{
+		m_LButtonDown = TRUE;
+		m_ptDragStart = point;
 
-    Invalidate();
-    CDialogEx::OnLButtonDown(nFlags, point);
+		if (m_eMoveMode == MoveMode::MovePoint)
+		{
+			m_pMovingPoint = nullptr;
+			SPoint tPoint = { 0, (double)point.x, (double)point.y };
+			SPoint::XY2xy(tPoint, SPoint(0, m_x1, m_y2), m_StateShow);
+			m_pMovingPoint = m_Data.FindPoint(tPoint, 3);
+		}
+		else if (m_eMoveMode == MoveMode::MoveLine)
+		{
+			m_pMovingLine = nullptr;
+			SPoint tPoint = { 0, (double)point.x, (double)point.y };
+			SPoint::XY2xy(tPoint, SPoint(0, m_x1, m_y2), m_StateShow);
+			m_pMovingLine = m_Data.FindLine(tPoint, 3);
+		}
+		else // 选择模式
+		{
+			// 清理上一次选择的内存
+			for (int i = 0; i < m_SelectedPoints.GetSize(); i++)
+			{
+				delete m_SelectedPoints.GetAt(i);
+			}
+			m_SelectedPoints.RemoveAll(); // 清除之前的选择
+			bool bNodeSelected = false;
+
+			// 检查是否点中节点
+			for (int i = 0; i < m_Data.GetNum(); i++)
+			{
+				CLine* pLine = m_Data.GetLine(i);
+				if (!pLine) continue;
+				for (int j = 0; j < pLine->GetNum(); j++)
+				{
+					SPoint nodeS = pLine->GetPoint(j);
+
+					// 将世界坐标转换为屏幕坐标
+					SPoint screenNodeS = nodeS;
+					SPoint::xy2XY(screenNodeS, SPoint(0, m_x1, m_y2), m_StateShow);
+					screenNodeS.m_x += m_StateShow.m_dx;
+					screenNodeS.m_y -= m_StateShow.m_dy;
+					CPoint screenNode((int)screenNodeS.m_x, (int)screenNodeS.m_y);
+
+					// 计算距离
+					int dist = (point.x - screenNode.x) * (point.x - screenNode.x) + (point.y - screenNode.y) * (point.y - screenNode.y);
+					if (dist < 25) // 5像素的点击范围
+					{
+						// 使用 new 创建 CPoint 对象，因为数组存储的是指针
+						CPoint* pSelectedPoint = new CPoint(screenNode);
+						m_SelectedPoints.Add(pSelectedPoint);
+						bNodeSelected = true;
+						break; // 点中一个节点后就不用再找这条线上的其他节点
+					}
+				}
+				if (bNodeSelected)
+				{
+					break; // 点中一个节点后就不用再找其他线
+				}
+			}
+
+			// 如果没有点中节点，则尝试选择线
+			if (!bNodeSelected)
+			{
+				SPoint tPoint = { 0, (double)point.x, (double)point.y };
+				SPoint::XY2xy(tPoint, SPoint(0, m_x1, m_y2), m_StateShow);
+				m_Data.SetCurrent(tPoint);
+			}
+		}
+		Invalidate(); // 触发重绘
+	}
+
+	CDialogEx::OnLButtonDown(nFlags, point);
 }
 
 // 鼠标抬起事件
 void CDRAWDlg::OnLButtonUp(UINT nFlags, CPoint point)
 {
-    if (point.x < m_x1 || point.x > m_x2 || point.y < m_y1 || point.y > m_y2)
-        return;
+	m_LButtonDown = FALSE;
+	m_pMovingPoint = nullptr;
+	m_pMovingLine = nullptr;
+	m_eMoveMode = MoveMode::None; // 结束移动状态
 
-    if (m_bDrawingShape)
-    {
-        // 轉換坐標
-        CPoint ptStart = m_ptShapeStart;
-        CPoint ptEnd = point;
+	if (m_bDraw && m_bDrawingShape)
+	{
+		if (point.x < m_x1 || point.x > m_x2 || point.y < m_y1 || point.y > m_y2)
+			return;
 
-        // 根據形狀類型添加點
-        switch (m_eShapeType)
-        {
-        case ShapeType::RECTANGLE:
-        {
-            // 添加矩形的四個頂點
-            SPoint p1 = { 0, (double)(ptStart.x - m_StateShow.m_dx), (double)(ptStart.y + m_StateShow.m_dy) };
-            SPoint p2 = { 0, (double)(ptEnd.x - m_StateShow.m_dx), (double)(ptStart.y + m_StateShow.m_dy) };
-            SPoint p3 = { 0, (double)(ptEnd.x - m_StateShow.m_dx), (double)(ptEnd.y + m_StateShow.m_dy) };
-            SPoint p4 = { 0, (double)(ptStart.x - m_StateShow.m_dx), (double)(ptEnd.y + m_StateShow.m_dy) };
-            
-            // 轉換坐標
-            SPoint::XY2xy(p1, SPoint(0, m_x1, m_y2), m_StateShow);
-            SPoint::XY2xy(p2, SPoint(0, m_x1, m_y2), m_StateShow);
-            SPoint::XY2xy(p3, SPoint(0, m_x1, m_y2), m_StateShow);
-            SPoint::XY2xy(p4, SPoint(0, m_x1, m_y2), m_StateShow);
-            
-            m_Data.AddPoint(p1);
-            m_Data.AddPoint(p2);
-            m_Data.AddPoint(p3);
-            m_Data.AddPoint(p4);
-            m_Data.AddPoint(p1); // 閉合矩形
-            break;
-        }
+		// 结束形状绘制
+		m_bDrawingShape = false;
+		CPoint ptStart = m_ptShapeStart;
+		CPoint ptEnd = point;
 
-        case ShapeType::SQUARE:
-        {
-            int size = max(abs(ptEnd.x - ptStart.x), abs(ptEnd.y - ptStart.y));
-            int x2 = ptStart.x + (ptEnd.x > ptStart.x ? size : -size);
-            int y2 = ptStart.y + (ptEnd.y > ptStart.y ? size : -size);
-            
-            SPoint p1 = { 0, (double)(ptStart.x - m_StateShow.m_dx), (double)(ptStart.y + m_StateShow.m_dy) };
-            SPoint p2 = { 0, (double)(x2 - m_StateShow.m_dx), (double)(ptStart.y + m_StateShow.m_dy) };
-            SPoint p3 = { 0, (double)(x2 - m_StateShow.m_dx), (double)(y2 + m_StateShow.m_dy) };
-            SPoint p4 = { 0, (double)(ptStart.x - m_StateShow.m_dx), (double)(y2 + m_StateShow.m_dy) };
-            
-            // 轉換坐標
-            SPoint::XY2xy(p1, SPoint(0, m_x1, m_y2), m_StateShow);
-            SPoint::XY2xy(p2, SPoint(0, m_x1, m_y2), m_StateShow);
-            SPoint::XY2xy(p3, SPoint(0, m_x1, m_y2), m_StateShow);
-            SPoint::XY2xy(p4, SPoint(0, m_x1, m_y2), m_StateShow);
-            
-            m_Data.AddPoint(p1);
-            m_Data.AddPoint(p2);
-            m_Data.AddPoint(p3);
-            m_Data.AddPoint(p4);
-            m_Data.AddPoint(p1); // 閉合正方形
-            break;
-        }
+		// 转换坐标
+		ptStart.x -= m_StateShow.m_dx; ptStart.y += m_StateShow.m_dy;
+		ptEnd.x -= m_StateShow.m_dx; ptEnd.y += m_StateShow.m_dy;
 
-        case ShapeType::CIRCLE:
-        {
-            double centerX = (ptStart.x + ptEnd.x) / 2.0;
-            double centerY = (ptStart.y + ptEnd.y) / 2.0;
-            double radius = sqrt(pow(ptEnd.x - ptStart.x, 2) + pow(ptEnd.y - ptStart.y, 2)) / 2.0;
-            
-            const int numPoints = 32;
-            for (int i = 0; i <= numPoints; i++)
-            {
-                double angle = 2 * 3.14159 * i / numPoints;
-                double x = centerX + radius * cos(angle);
-                double y = centerY + radius * sin(angle);
-                SPoint p = { 0, x - m_StateShow.m_dx, y + m_StateShow.m_dy };
-                SPoint::XY2xy(p, SPoint(0, m_x1, m_y2), m_StateShow);
-                m_Data.AddPoint(p);
-            }
-            break;
-        }
-        }
+		SPoint spStart = { 0, (double)ptStart.x, (double)ptStart.y };
+		SPoint::XY2xy(spStart, SPoint(0, m_x1, m_y2), m_StateShow);
 
-        m_bDrawingShape = false;
-        Invalidate();
-    }
+		SPoint spEnd = { 0, (double)ptEnd.x, (double)ptEnd.y };
+		SPoint::XY2xy(spEnd, SPoint(0, m_x1, m_y2), m_StateShow);
 
-    CDialogEx::OnLButtonUp(nFlags, point);
+		switch (m_eShapeType)
+		{
+		case ShapeType::RECTANGLE:
+		{
+			m_Data.AddPoint(spStart);
+			m_Data.AddPoint(SPoint(0, spEnd.m_x, spStart.m_y));
+			m_Data.AddPoint(spEnd);
+			m_Data.AddPoint(SPoint(0, spStart.m_x, spEnd.m_y));
+			m_Data.AddPoint(spStart);
+			break;
+		}
+		case ShapeType::SQUARE:
+		{
+			double size = max(abs(spEnd.m_x - spStart.m_x), abs(spEnd.m_y - spStart.m_y));
+			double x2 = spStart.m_x + (spEnd.m_x > spStart.m_x ? size : -size);
+			double y2 = spStart.m_y + (spEnd.m_y > spStart.m_y ? size : -size);
+
+			m_Data.AddPoint(spStart);
+			m_Data.AddPoint(SPoint(0, x2, spStart.m_y));
+			m_Data.AddPoint(SPoint(0, x2, y2));
+			m_Data.AddPoint(SPoint(0, spStart.m_x, y2));
+			m_Data.AddPoint(spStart);
+			break;
+		}
+		case ShapeType::CIRCLE:
+		{
+			double centerX = (spStart.m_x + spEnd.m_x) / 2.0;
+			double centerY = (spStart.m_y + spEnd.m_y) / 2.0;
+			double radius = sqrt(pow(spEnd.m_x - spStart.m_x, 2) + pow(spEnd.m_y - spStart.m_y, 2)) / 2.0;
+			const int numPoints = 36;
+			for (int i = 0; i <= numPoints; i++)
+			{
+				double angle = 2 * 3.1415926535 / numPoints * i;
+				double x = centerX + radius * cos(angle);
+				double y = centerY + radius * sin(angle);
+				m_Data.AddPoint(SPoint(0, x, y));
+			}
+			break;
+		}
+		}
+
+	}
+	Invalidate();
+	CDialogEx::OnLButtonUp(nFlags, point);
 }
 
 // 笔画粗细
@@ -706,20 +822,20 @@ void CDRAWDlg::OnCbnSelchangeShapeCombo()
 	int nSel = m_cboShape.GetCurSel();
 	if (nSel != CB_ERR)
 	{
+		m_bDrawingShape = false; // 切换形状时取消预览
+		m_LButtonDown = FALSE;
+
 		switch (nSel)
 		{
 		case 0: // 自由绘制
 			m_eShapeType = ShapeType::FREE_DRAW;
 			break;
-
 		case 1: // 矩形
 			m_eShapeType = ShapeType::RECTANGLE;
 			break;
-
 		case 2: // 正方形
 			m_eShapeType = ShapeType::SQUARE;
 			break;
-
 		case 3: // 圆形
 			m_eShapeType = ShapeType::CIRCLE;
 			break;
@@ -755,8 +871,8 @@ void CDRAWDlg::InitButtonLabels()
 	SetButtonTextFromResource(IDC_DRAW, IDS_STRING_DRAW);
 	SetButtonTextFromResource(IDC_SEL, IDS_STRING_SEL);
 	SetButtonTextFromResource(IDC_MOVE, IDS_STRING_MOVE);
-	//SetButtonTextFromResource(IDC_MOVE_LINE, IDS_STRING_MOVE_LINE);
-	//SetButtonTextFromResource(IDC_MOVE_POINT, IDS_STRING_MOVE_POINT);
+	SetButtonTextFromResource(IDC_MOVE_LINE, IDS_STRING_MOVE_LINE);
+	SetButtonTextFromResource(IDC_MOVE_POINT, IDS_STRING_MOVE_POINT);
 	SetButtonTextFromResource(IDC_DEL_POINT, IDS_STRING_DEL_POINT);
 	SetButtonTextFromResource(DC_DEL_LINE, IDS_STRING_DEL_LINE);
 	SetButtonTextFromResource(IDC_UNDO, IDS_STRING_UNDO);

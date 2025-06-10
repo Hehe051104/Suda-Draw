@@ -42,6 +42,7 @@ protected:
 	afx_msg HCURSOR OnQueryDragIcon();
 	DECLARE_MESSAGE_MAP()
 
+	// 核心数据和状态
 	int m_w;                     //对话框窗口宽度
 	int m_h;                     //对话框窗口高度
 	int m_x1;                    //绘图区域左上角物理坐标x
@@ -54,18 +55,51 @@ protected:
 	CString m_csFilePath;        //当前文件路径
 	CFont m_Font;                //当前字体
 
+	// 颜色相关
 	COLORREF m_ColorLine;        //画线颜色
 	COLORREF m_ColorPoint;       //画点颜色
 	COLORREF m_ColorLineCur;     //当前线颜色
 	COLORREF m_ColorPointCur;    //当前点颜色
-
-	// ---- 新增：颜色选择相关成员 ----
-
 	COLORREF m_ColorBg;           // 背景颜色
 	COLORREF m_ColorBgCur;    // 当前背景颜色
 	CColorDialog m_ColorDlg;     // 颜色对话框对象
 
+	// 绘图状态变量
+	CPoint m_pt;
+	BOOL m_LButtonDown;
+	CLine* m_pLineCur;
+	int m_nPenWidth; // 笔画宽度（像素）
+	CPoint m_CurrentMousePos;
 
+	// 形状绘制相关
+	enum class ShapeType {
+		FREE_DRAW,    // 自由绘制
+		RECTANGLE,    // 矩形（包括正方形）
+		SQUARE,
+		CIRCLE,        // 圆形
+		TRIANGLE
+	};
+	
+	enum class MoveMode {
+		None,
+		MovePoint,
+		MoveLine
+	};
+
+	CPoint m_ptShapeStart;
+	bool m_bDrawingShape;
+	ShapeType m_eShapeType;
+	MoveMode m_eMoveMode;
+
+	// 控件变量
+	CComboBox m_cboShape;        // 形状选择组合框
+	CComboBox m_cboPenWidth;
+
+	// 选择功能相关
+	CArray<CPoint*, CPoint*> m_SelectedPoints;
+	SPoint* m_pMovingPoint;
+	CLine* m_pMovingLine;
+	CPoint m_ptDragStart;
 
 public:
 	afx_msg void OnLButtonUp(UINT nFlags, CPoint point);    //鼠标左键弹起消息
@@ -97,31 +131,12 @@ public:
 	afx_msg void OnBnClickedBtnBgColor();    // 背景颜色按钮事件
 	void UpdateButtonColor(UINT nButtonID, COLORREF color); // 更新按钮显示
 
-
 	afx_msg void OnLButtonDown(UINT nFlags, CPoint point); // 声明消息响应函数
-
-
 
 	afx_msg void OnCbnSelchangePenWidthCombo(); // 笔画粗细
 
 	afx_msg void OnCbnSelchangeShapeCombo(); // 选择形状
 
-
-	// 新增笔画粗细
-	int m_nPenWidth; // 笔画宽度（像素）
-	CComboBox m_cboPenWidth; // 组合框控件变量
-
-
-	enum class ShapeType {
-		FREE_DRAW,    // 自由绘制
-		RECTANGLE,    // 矩形（包括正方形）
-		SQUARE,
-		CIRCLE,        // 圆形
-		TRIANGLE
-	};
-	CPoint m_ptShapeStart;       // 形状起始点
-	bool m_bDrawingShape;        // 是否正在绘制形状
-	CComboBox m_cboShape;        // 形状选择组合框
-	ShapeType m_eShapeType;      // 当前形状类型
-	CPoint m_CurrentMousePos;    // 当前鼠标位置
+	afx_msg void OnBnClickedMoveLine();
+	afx_msg void OnBnClickedMovePoint();
 };
