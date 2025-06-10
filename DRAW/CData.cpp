@@ -1,187 +1,157 @@
 #include "pch.h"
 #include "CData.h"
+#include <algorithm>
 
-CData::CData() {
-    m_nLine = 0;
-    m_pCurLine = NULL;
-}
+CData::CData() : m_pCurLine(nullptr) {}
 
 CData::~CData() {
     Clear();
 }
 
-int CData::AddLine(SPoint p0) {  //添加一条新线返回该线序号
-    m_pLine[m_nLine] = new CLine(m_nLine, p0);
-    m_pCurLine = m_pLine[m_nLine];  //新线为当前线
-    m_nLine++;
-    return m_nLine - 1;
+void CData::Clear() {
+    m_lines.clear();
+    m_pCurLine = nullptr;
 }
 
-int CData::AddPoint(SPoint p0, int sn) {  //为指定线添加一个点，返回点序号
-    if (sn) {
-        return m_pLine[sn - 1]->AddPoint(p0);
+CLine* CData::GetLine(int nIndex) {
+    if (nIndex >= 0 && nIndex < (int)m_lines.size()) {
+        return &m_lines[nIndex];
     }
-    else if (m_pCurLine) {
-        return m_pCurLine->AddPoint(p0);
-    }
-    else {
-        AddLine(p0);
-        return p0.m_sn;
+    return nullptr;
+}
+
+void CData::AddLine(const CLine& line) {
+    m_lines.push_back(line);
+}
+
+void CData::StartNewLine(const SPoint& p0) {
+    m_lines.emplace_back(m_lines.size(), const_cast<SPoint&>(p0));
+    m_pCurLine = &m_lines.back();
+}
+
+void CData::AddPointToLine(const SPoint& p0, int lineIndex) {
+    if (m_pCurLine) {
+        m_pCurLine->AddPoint(p0);
     }
 }
 
-bool CData::SetCurrent(SPoint p0, int d) {  //选择当前线、点
-    for (int i = 0; i < m_nLine; i++) {
-        if (m_pLine[i]->SetCurrent(p0, d)) {
-            m_pCurLine = m_pLine[i];
+bool CData::SetCurrent(SPoint p0, int d) {
+    for (auto& line : m_lines) {
+        if (line.SetCurrent(p0, d)) {
+            m_pCurLine = &line;
             return true;
         }
     }
+    m_pCurLine = nullptr;
     return false;
 }
-
-void CData::ShowLine(CDC* pDC, SPoint p0, SShowState state) {
-    for (int i = 0; i < m_nLine; i++) {
-        m_pLine[i]->ShowLine(pDC, p0, state);
-    }
-}
-
-void CData::ShowCurLine(CDC* pDC, SPoint p0, SShowState state) {
-    if (m_pCurLine) {
-        m_pCurLine->ShowLine(pDC, p0, state);
-    }
-}
-
 
 bool CData::DelLine() {
-    if (!m_pCurLine) {
-        return false;
+    if (!m_pCurLine) return false;
+
+    auto it = std::remove_if(m_lines.begin(), m_lines.end(),
+        [this](const CLine& line) {
+            return &line == m_pCurLine;
+        });
+
+    if (it != m_lines.end()) {
+        m_lines.erase(it, m_lines.end());
+        m_pCurLine = nullptr;
+        return true;
     }
-    for (int i = 0; i < m_nLine; i++) {
-        if (m_pCurLine == m_pLine[i]) {
-            delete m_pCurLine;
-            m_pCurLine = NULL;
-            for (int j = i; j < m_nLine; j++) {
-                m_pLine[j] = m_pLine[j + 1];
-            }
-            m_pLine[m_nLine - 1] = NULL;
-            m_nLine--;
+    return false;
+}
+
+bool CData::DeletePointAt(const SPoint& p0) {
+    for (auto& line : m_lines) {
+        if (line.DelPoint(p0)) {
             return true;
         }
     }
     return false;
 }
 
-void CData::ShowPoint(CDC* pDC, SPoint p0, SShowState state, int d) {
-    for (int i = 0; i < m_nLine; i++) {
-        m_pLine[i]->ShowPoint(pDC, p0, state, d);
+SPoint* CData::FindPoint(SPoint p0, int d) {
+    double min_dist_sq = (double)d * d;
+    SPoint* found_point = nullptr;
+
+    for (auto& line : m_lines) {
+        for (int i = 0; i < line.GetNum(); ++i) {
+            SPoint& pt = line.GetPointForUpdate(i);
+            double dist_sq = pow(pt.m_x - p0.m_x, 2) + pow(pt.m_y - p0.m_y, 2);
+            if (dist_sq < min_dist_sq) {
+                min_dist_sq = dist_sq;
+                found_point = &pt;
+            }
+        }
+    }
+    return found_point;
+}
+
+CLine* CData::FindLine(SPoint p0, int d) {
+    for (auto& line : m_lines) {
+        if (line.IsOnLine(p0, d)) {
+            return &line;
+        }
+    }
+    return nullptr;
+}
+
+void CData::Show(CDC* pDC, SPoint p0, SShowState state) const {
+    for (const auto& line : m_lines) {
+        line.ShowLine(pDC, p0, state);
+        line.ShowPoint(pDC, p0, state);
     }
 }
 
-void CData::ShowCurPoint(CDC* pDC, SPoint p0, SShowState state, int d) {
+void CData::ShowCur(CDC* pDC, SPoint p0, SShowState state) const {
     if (m_pCurLine) {
-        m_pCurLine->ShowCurPoint(pDC, p0, state, d);
+        m_pCurLine->ShowLine(pDC, p0, state);
+        m_pCurLine->ShowPoint(pDC, p0, state);
+        m_pCurLine->ShowCurPoint(pDC, p0, state);
     }
-}
-
-
-bool CData::DelPoint() {
-    if (!m_pCurLine) {
-        return false;
-    }
-    return m_pCurLine->DelPoint();
 }
 
 bool CData::ReadPlt(const char* szFname) {
     FILE* plt;
-    if (fopen_s(&plt, szFname, "rt")) {
-        return false;
-    }
+    if (fopen_s(&plt, szFname, "rt")) return false;
+
     Clear();
-    char cBuf[256];  //保存文件的一行
-    int x, y;        //读入PLT点坐标
-    while (!feof(plt)) {
-        fgets(cBuf, sizeof(cBuf), plt);
-        if (strstr(cBuf, "PU")) {  //开始新线
-            EndLine();
-            sscanf_s(cBuf, "PU%d%d", &x, &y);
+    char cBuf[256];
+    int x, y;
+
+    while (fgets(cBuf, sizeof(cBuf), plt)) {
+        if (strstr(cBuf, "PU")) {
+            if (sscanf_s(cBuf, "PU%d,%d", &x, &y) == 2 || sscanf_s(cBuf, "PU %d %d", &x, &y) == 2) {
+                StartNewLine(SPoint(0, x / 40.0, y / 40.0));
+            }
         }
         else if (strstr(cBuf, "PD")) {
-            sscanf_s(cBuf, "PD%d%d", &x, &y);
+            if (sscanf_s(cBuf, "PD%d,%d", &x, &y) == 2 || sscanf_s(cBuf, "PD %d %d", &x, &y) == 2) {
+                AddPointToLine(SPoint(0, x / 40.0, y / 40.0));
+            }
         }
-        else {
-            continue;
-        }
-        AddPoint(SPoint(0, x / 40.0, y / 40.0));  //转换为毫米
     }
     EndLine();
     fclose(plt);
     return true;
 }
 
-bool CData::WritePlt(const char* szFname) {
+bool CData::WritePlt(const char* szFname) const {
     FILE* fp;
-    if (fopen_s(&fp, szFname, "wt")) {
-        return false;
-    }
-    fprintf(fp, "IN;\n");
-    for (int i = 0; i < m_nLine; i++) {
-        fprintf(fp, "SP1;\n");
-        fprintf(fp, "PU%d %d;\n",
-            (int)(m_pLine[i]->GetPoint(0).m_x * 40),
-            (int)(m_pLine[i]->GetPoint(0).m_y * 40));
-        for (int j = 1; j < m_pLine[i]->GetNum(); j++) {
-            fprintf(fp, "PD%d %d;\n",
-                (int)(m_pLine[i]->GetPoint(j).m_x * 40),
-                (int)(m_pLine[i]->GetPoint(j).m_y * 40));
+    if (fopen_s(&fp, szFname, "wt")) return false;
+
+    fprintf(fp, "IN;SP1;\n");
+    for (const auto& line : m_lines) {
+        if (line.GetNum() == 0) continue;
+        const auto& first_point = line.GetPoint(0);
+        fprintf(fp, "PU%d,%d;\n", (int)(first_point.m_x * 40), (int)(first_point.m_y * 40));
+        for (int j = 1; j < line.GetNum(); ++j) {
+            const auto& point = line.GetPoint(j);
+            fprintf(fp, "PD%d,%d;\n", (int)(point.m_x * 40), (int)(point.m_y * 40));
         }
     }
-    fprintf(fp, "SP0;\n");
+    fprintf(fp, "SP0;");
     fclose(fp);
     return true;
-}
-
-void CData::Clear() {  //清空数据
-    for (int i = 0; i < m_nLine; i++) {
-        delete m_pLine[i];
-    }
-    m_nLine = 0;
-    m_pCurLine = NULL;
-}
-
-CLine* CData::GetLine(int nIndex)
-{
-    if (nIndex >= 0 && nIndex < m_nLine)
-    {
-        return m_pLine[nIndex];
-    }
-    return NULL;
-}
-
-SPoint* CData::FindPoint(SPoint p0, int d)
-{
-    for (int i = 0; i < m_nLine; i++)
-    {
-        for (int j = 0; j < m_pLine[i]->GetNum(); j++)
-        {
-            SPoint pt = m_pLine[i]->GetPoint(j);
-            if (fabs(pt.m_x - p0.m_x) < d && fabs(pt.m_y - p0.m_y) < d)
-            {
-                return &m_pLine[i]->GetPointForUpdate(j);
-            }
-        }
-    }
-    return nullptr;
-}
-
-CLine* CData::FindLine(SPoint p0, int d)
-{
-    for (int i = 0; i < m_nLine; i++)
-    {
-        if (m_pLine[i]->IsOnLine(p0, d))
-        {
-            return m_pLine[i];
-        }
-    }
-    return nullptr;
 }
