@@ -139,46 +139,67 @@ void CDRAWDlg::OnPaint() {
 }
 
 void CDRAWDlg::Draw(CDC* pDC) {
-	CBrush BrushBk(m_ColorBg); CBrush* pOldBrush = pDC->SelectObject(&BrushBk);
-	pDC->Rectangle(m_x1, m_y1, m_x2, m_y2);
-	pDC->SelectObject(pOldBrush); BrushBk.DeleteObject();
-	CPen NewPen(PS_SOLID, m_nPenWidth, m_ColorLine); CPen* pOldPen = pDC->SelectObject(&NewPen);
-	m_Data.Show(pDC, SPoint(0, (double)m_x1, (double)m_y2), m_StateShow);
-	m_Data.ShowCur(pDC, SPoint(0, (double)m_x1, (double)m_y2), m_StateShow);
-	pDC->SelectObject(pOldPen); NewPen.DeleteObject();
+	CRect rcDraw(m_x1, m_y1, m_x2, m_y2);
+
+	// 使用CMemDC实现双缓冲，防止闪烁
+	CMemDC memDC(*pDC, rcDraw);
+	CDC* pDrawDC = &memDC.GetDC();
+
+	// 1. 绘制背景
+	pDrawDC->FillSolidRect(rcDraw, m_ColorBg);
+
+	// 2. 绘制所有已保存的线条和节点
+	CPen NewPen(PS_SOLID, m_nPenWidth, m_ColorLine);
+	CPen* pOldPen = pDrawDC->SelectObject(&NewPen);
+	m_Data.Show(pDrawDC, SPoint(0, (double)m_x1, (double)m_y2), m_StateShow);
+	pDrawDC->SelectObject(pOldPen);
+	NewPen.DeleteObject();
+
+	// 3. 绘制当前正在画的线
+	m_Data.ShowCur(pDrawDC, SPoint(0, (double)m_x1, (double)m_y2), m_StateShow);
+	
+	// 4. 绘制形状预览（不使用R2_NOTXORPEN）
 	if (m_bDrawingShape && m_LButtonDown) {
-		int nOldROP2 = pDC->SetROP2(R2_NOTXORPEN);
 		CPen previewPen(PS_DOT, 1, RGB(0, 0, 0));
 		CBrush* pNullBrush = (CBrush*)CBrush::FromHandle((HBRUSH)GetStockObject(NULL_BRUSH));
-		CPen* pOldPreviewPen = pDC->SelectObject(&previewPen); CBrush* pOldPreviewBrush = pDC->SelectObject(pNullBrush);
-		CPoint ptStart = m_ptShapeStart; CPoint ptEnd = m_CurrentMousePos;
+		CPen* pOldPreviewPen = pDrawDC->SelectObject(&previewPen);
+		CBrush* pOldPreviewBrush = pDrawDC->SelectObject(pNullBrush);
+		CPoint ptStart = m_ptShapeStart;
+		CPoint ptEnd = m_CurrentMousePos;
 		switch (m_eShapeType) {
-		case ShapeType::RECTANGLE: pDC->Rectangle(ptStart.x, ptStart.y, ptEnd.x, ptEnd.y); break;
+		case ShapeType::RECTANGLE: pDrawDC->Rectangle(ptStart.x, ptStart.y, ptEnd.x, ptEnd.y); break;
 		case ShapeType::SQUARE: {
 			int size = max(abs(ptEnd.x - ptStart.x), abs(ptEnd.y - ptStart.y));
 			int x2 = ptStart.x + (ptEnd.x > ptStart.x ? size : -size); int y2 = ptStart.y + (ptEnd.y > ptStart.y ? size : -size);
-			pDC->Rectangle(ptStart.x, ptStart.y, x2, y2); break;
+			pDrawDC->Rectangle(ptStart.x, ptStart.y, x2, y2); break;
 		}
 		case ShapeType::CIRCLE: {
 			double r = sqrt(pow(ptEnd.x - ptStart.x, 2) + pow(ptEnd.y - ptStart.y, 2));
-			pDC->Ellipse((int)(ptStart.x - r), (int)(ptStart.y - r), (int)(ptStart.x + r), (int)(ptStart.y + r)); break;
+			pDrawDC->Ellipse((int)(ptStart.x - r), (int)(ptStart.y - r), (int)(ptStart.x + r), (int)(ptStart.y + r)); break;
 		}
 		default: break;
 		}
-		pDC->SelectObject(pOldPreviewBrush); pDC->SelectObject(pOldPreviewPen); pDC->SetROP2(nOldROP2);
+		pDrawDC->SelectObject(pOldPreviewBrush);
+		pDrawDC->SelectObject(pOldPreviewPen);
 	}
-	CPen selectionPen(PS_SOLID, 2, RGB(255, 0, 0)); CBrush selectionBrush(RGB(255, 0, 0));
-	pOldPen = pDC->SelectObject(&selectionPen); pOldBrush = pDC->SelectObject(&selectionBrush);
+
+	// 5. 高亮绘制选中的节点
+	CPen selectionPen(PS_SOLID, 2, RGB(255, 0, 0)); 
+	CBrush selectionBrush(RGB(255, 0, 0));
+	pOldPen = pDrawDC->SelectObject(&selectionPen); 
+	CBrush* pOldBrush = pDrawDC->SelectObject(&selectionBrush);
 	for (INT_PTR i = 0; i < m_SelectedPoints.GetSize(); i++) {
 		SPoint* pPoint = m_SelectedPoints.GetAt(i);
 		if (pPoint) {
 			SPoint screenPoint = *pPoint; SPoint::xy2XY(screenPoint, SPoint(0, (double)m_x1, (double)m_y2), m_StateShow);
-			pDC->Ellipse((int)(screenPoint.m_x + m_StateShow.m_dx) - 4, (int)(screenPoint.m_y + m_StateShow.m_dy) - 4,
+			pDrawDC->Ellipse((int)(screenPoint.m_x + m_StateShow.m_dx) - 4, (int)(screenPoint.m_y + m_StateShow.m_dy) - 4,
 				(int)(screenPoint.m_x + m_StateShow.m_dx) + 4, (int)(screenPoint.m_y + m_StateShow.m_dy) + 4);
 		}
 	}
-	pDC->SelectObject(pOldPen); pDC->SelectObject(pOldBrush);
+	pDrawDC->SelectObject(pOldPen); 
+	pDrawDC->SelectObject(pOldBrush);
 }
+
 HCURSOR CDRAWDlg::OnQueryDragIcon() { return static_cast<HCURSOR>(m_hIcon); }
 void CDRAWDlg::OnRButtonDown(UINT nFlags, CPoint point) { m_Data.EndLine(); Invalidate(); CDialogEx::OnRButtonDown(nFlags, point); }
 void CDRAWDlg::OnBnClickedOpen() {
@@ -192,33 +213,45 @@ void CDRAWDlg::OnBnClickedSaveAs() {
 }
 void CDRAWDlg::OnMouseMove(UINT nFlags, CPoint point) {
 	m_CurrentMousePos = point;
+	
+	// 优化：只重绘状态栏区域以更新坐标，避免重绘整个对话框导致闪烁
+	CRect rcStatus(0, m_y2, m_w, m_h);
+	InvalidateRect(&rcStatus, TRUE);
+	
 	if (m_LButtonDown) {
+		// 优化：只重绘绘图区域，不影响左侧按钮
+		CRect rcDraw(m_x1, m_y1, m_x2, m_y2);
+		InvalidateRect(&rcDraw, FALSE); // FALSE表示不擦除背景，因为Draw函数会自己画背景
+		
 		if (m_bDraw) {
 			if (m_eShapeType == ShapeType::FREE_DRAW) {
 				if (point.x > m_x1 && point.x < m_x2 && point.y > m_y1 && point.y < m_y2) {
 					SPoint worldPoint = { 0, (double)point.x, (double)point.y };
-					worldPoint.m_x -= m_StateShow.m_dx; worldPoint.m_y -= m_StateShow.m_dy;
+					worldPoint.m_x -= m_StateShow.m_dx;
+					worldPoint.m_y -= m_StateShow.m_dy;
 					SPoint::XY2xy(worldPoint, SPoint(0, (double)m_x1, (double)m_y2), m_StateShow);
-					m_Data.AddPointToLine(worldPoint); Invalidate();
+					m_Data.AddPointToLine(worldPoint);
 				}
 			}
-			else { Invalidate(); }
 		}
 		else {
 			if (m_pMovingPoint) {
 				SPoint worldPoint = { 0, (double)point.x, (double)point.y };
-				worldPoint.m_x -= m_StateShow.m_dx; worldPoint.m_y -= m_StateShow.m_dy;
+				worldPoint.m_x -= m_StateShow.m_dx;
+				worldPoint.m_y -= m_StateShow.m_dy;
 				SPoint::XY2xy(worldPoint, SPoint(0, (double)m_x1, (double)m_y2), m_StateShow);
-				m_pMovingPoint->m_x = worldPoint.m_x; m_pMovingPoint->m_y = worldPoint.m_y; Invalidate();
+				m_pMovingPoint->m_x = worldPoint.m_x;
+				m_pMovingPoint->m_y = worldPoint.m_y;
 			}
 			else if (m_pMovingLine) {
 				double dx = (point.x - m_ptDragStart.x) / m_StateShow.m_r;
-				double dy = (point.y - m_ptDragStart.y) / m_StateShow.m_r;
+				double dy = (point.y - m_ptDragStart.y) / m_StateShow.m_r; // Y轴方向修正
 				m_ptDragStart = point;
 				for (int i = 0; i < m_pMovingLine->GetNum(); i++) {
-					SPoint& pt = m_pMovingLine->GetPointForUpdate(i); pt.m_x += dx; pt.m_y -= dy;
+					SPoint& pt = m_pMovingLine->GetPointForUpdate(i);
+					pt.m_x += dx;
+					pt.m_y -= dy; // 屏幕坐标Y轴向下，模型坐标Y轴向上
 				}
-				Invalidate();
 			}
 		}
 	}
